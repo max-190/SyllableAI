@@ -11,6 +11,8 @@ from tqdm import tqdm
 char_to_idx = {' ': 0, '\'': 1, '-': 2, '.': 3, 'a': 4, 'b': 5, 'c': 6, 'd': 7, 'e': 8, 'f': 9, 'g': 10, 'h': 11, 'i': 12, 'j': 13, 'k': 14, 'l': 15, 'm': 16, 'n': 17, 'o': 18, 'p': 19, 'q': 20, 'r': 21, 's': 22, 't': 23, 'u': 24, 'v': 25, 'w': 26, 'x': 27, 'y': 28, 'z': 29}
 idx_to_char = {idx: char for char, idx in char_to_idx.items()} # TODO: needed?
 
+VOCAB_SIZE = 30 # According to tests, dependant on used dataset
+
 def str_to_tensor(word):
     return torch.LongTensor([char_to_idx[letter] for letter in word])
 
@@ -56,7 +58,7 @@ def parse_args():
     # TODO: maybe make it so that a model can be loaded and saved in the same program call, something like update_model
     mutex_path = parser.add_mutually_exclusive_group()
     mutex_path.add_argument('-s', '--save', '--save-path', type=str, default='data/syllable_model.pth', help='Path to file where model state_dict should be stored.')
-    mutex_path.add_argument('-l', '--load', '--load-path', type=str, default='data/phoneticDictionary.csv', help='Path to dataset.')
+    mutex_path.add_argument('-l', '--load', '--load-path', type=str, default='data/syllable_model.pth', help='Path to dataset.')
 
     hyperparams = parser.add_argument_group('Hyper parameters')
     hyperparams.add_argument('-n', '--epochs', '--num-epochs', type=int, default=5, help='Number of epochs the model will be trained for.')
@@ -70,12 +72,8 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-
-
-
-    with open(args.load) as csv_file:
+def train(args):
+    with open('data/phoneticDictionary.csv') as csv_file:
         csv_reader = csv.reader(csv_file)
         next(csv_reader)
         data = []
@@ -90,11 +88,9 @@ def main():
     val_loader = DataLoader(val_data, args.batch, shuffle=False, collate_fn=collate_fn)
     test_loader = DataLoader(test_data, args.batch, shuffle=False, collate_fn=collate_fn)
 
-    vocab_size = 30 # According to tests, dependant on used dataset
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SyllableCounter(vocab_size, args.embeds, args.hiddens, args.layers, args.dropout).to(device)
+    model = SyllableCounter(VOCAB_SIZE, args.embeds, args.hiddens, args.layers, args.dropout).to(device)
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -152,6 +148,35 @@ def main():
             total_preds += targets.size(0)
     
     print(f"Test Loss: {test_loss / len(test_loader)}, Test Accuracy: {(correct_preds / total_preds):.2f}")
+
+    torch.save(model.state_dict(), args.save)
+
+def load(args):
+    model = SyllableCounter(VOCAB_SIZE, args.embeds, args.hiddens, args.layers, args.dropout)
+    model.load_state_dict(torch.load(args.load, weights_only=True))
+    model.eval()
+
+    return model
+
+
+def num_syllables(model, word):
+    with torch.no_grad():
+        output = model(str_to_tensor(word).unsqueeze(0))
+        return int(torch.round(output.squeeze()).item())
+
+
+def main():
+    args = parse_args()
+
+    if args.train:
+        model = train(args)
+    else:
+        model = load(args)
+        print(num_syllables(model, args.eval))
+
+
+    
+
 
 
 if __name__ == '__main__':
