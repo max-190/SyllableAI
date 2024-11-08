@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 char_to_idx = {' ': 0, '\'': 1, '-': 2, '.': 3, 'a': 4, 'b': 5, 'c': 6, 'd': 7, 'e': 8, 'f': 9, 'g': 10, 'h': 11, 'i': 12, 'j': 13, 'k': 14, 'l': 15, 'm': 16, 'n': 17, 'o': 18, 'p': 19, 'q': 20, 'r': 21, 's': 22, 't': 23, 'u': 24, 'v': 25, 'w': 26, 'x': 27, 'y': 28, 'z': 29}
 
-VOCAB_SIZE = 30 # According to tests, dependant on used dataset
+VOCAB_SIZE = len(char_to_idx)
 
 def str_to_tensor(word):
     return torch.LongTensor([char_to_idx[letter] for letter in word])
@@ -148,11 +148,18 @@ def train(args):
     
     print(f"Test Loss: {test_loss / len(test_loader)}, Test Accuracy: {(correct_preds / total_preds):.2f}")
 
-    torch.save(model.state_dict(), args.save)
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'embedding_dims': args.embeds,
+        'hidden_dims': args.hiddens,
+        'lstm_layers': args.layers,
+        'dropout': args.dropout
+    }, args.save)
 
 def load(args):
-    model = SyllableCounter(VOCAB_SIZE, args.embeds, args.hiddens, args.layers, args.dropout)
-    model.load_state_dict(torch.load(args.load, weights_only=True))
+    cp = torch.load(args.load, weights_only=True)
+    model = SyllableCounter(VOCAB_SIZE, cp['embedding_dims'], cp['hidden_dims'], cp['lstm_layers'], cp['dropout'])
+    model.load_state_dict(cp['model_state_dict'])
     model.eval()
 
     return model
