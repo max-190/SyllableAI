@@ -9,7 +9,6 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 char_to_idx = {' ': 0, '\'': 1, '-': 2, '.': 3, 'a': 4, 'b': 5, 'c': 6, 'd': 7, 'e': 8, 'f': 9, 'g': 10, 'h': 11, 'i': 12, 'j': 13, 'k': 14, 'l': 15, 'm': 16, 'n': 17, 'o': 18, 'p': 19, 'q': 20, 'r': 21, 's': 22, 't': 23, 'u': 24, 'v': 25, 'w': 26, 'x': 27, 'y': 28, 'z': 29}
-idx_to_char = {idx: char for char, idx in char_to_idx.items()} # TODO: needed?
 
 VOCAB_SIZE = 30 # According to tests, dependant on used dataset
 
@@ -172,11 +171,7 @@ def main():
         model = train(args)
     else:
         model = load(args)
-        print(num_syllables(model, args.eval))
-
-
-    
-
+        print(f'{num_syllables(model, args.eval)} syllable(s)')
 
 
 if __name__ == '__main__':
