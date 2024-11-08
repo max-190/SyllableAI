@@ -1,4 +1,5 @@
 import csv
+import argparse as ap
 
 import torch
 import torch.nn as nn
@@ -14,11 +15,11 @@ def str_to_tensor(word):
     return torch.LongTensor([char_to_idx[letter] for letter in word])
 
 class SyllableCounter(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, hidden_dim):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, lstm_layers, dropout):
         super().__init__()
 
         self.embed = nn.Embedding(vocab_size, embedding_dim)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=2, dropout=0.3, batch_first=True)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=lstm_layers, dropout=dropout, batch_first=True)
         self.fc = nn.Linear(hidden_dim, 1)
     
     def forward(self, x):
@@ -46,8 +47,35 @@ class SyllableDataset(Dataset):
         return self.data[idx], self.labels[idx]
 
 
+def parse_args():
+    parser = ap.ArgumentParser(prog='python3 syllables.py', description="Train or use an AI built to recognize the amount of syllables in a given word.")
+
+    mutex_train = parser.add_mutually_exclusive_group(required=True)
+    mutex_train.add_argument('-t', '--train', action='store_true', help='Train a new model if specified.')
+    mutex_train.add_argument('-e', '--eval', '--evalutate', type=str, help='Evaluate given word on model.')
+    # TODO: maybe make it so that a model can be loaded and saved in the same program call, something like update_model
+    mutex_path = parser.add_mutually_exclusive_group()
+    mutex_path.add_argument('-s', '--save', '--save-path', type=str, default='data/syllable_model.pth', help='Path to file where model state_dict should be stored.')
+    mutex_path.add_argument('-l', '--load', '--load-path', type=str, default='data/phoneticDictionary.csv', help='Path to dataset.')
+
+    hyperparams = parser.add_argument_group('Hyper parameters')
+    hyperparams.add_argument('-n', '--epochs', '--num-epochs', type=int, default=5, help='Number of epochs the model will be trained for.')
+    hyperparams.add_argument('-b', '--batch', '--batch-size', type=int, default=32, help='Size of a batch processed during training.')
+    hyperparams.add_argument('--embeds', '--embed-dims', '--embedding-dimensions', type=int, default=50, help='Size of embedding dimensions in neural network.')
+    hyperparams.add_argument('--hiddens', '--hidden-layers', type=int, default=128, help='Amount of hidden layers in LSTM.')
+    hyperparams.add_argument('--layers', '--lstm-layers', type=int, default=2, help='Amount of layers in the networks LSTM.')
+    hyperparams.add_argument('--lr', '--learning-rate', type=float, default=0.001, help='Learning rate for optimizer Adam.')
+    hyperparams.add_argument('-d', '--dropout', type=float, default=0.3, help='Dropout rate during learning.')
+
+    return parser.parse_args()
+
+
 def main():
-    with open('data/phoneticDictionary.csv') as csv_file:
+    args = parse_args()
+
+
+
+    with open(args.load) as csv_file:
         csv_reader = csv.reader(csv_file)
         next(csv_reader)
         data = []
@@ -58,26 +86,22 @@ def main():
     
 
     train_data, val_data, test_data = random_split(SyllableDataset(data, labels), [0.70, 0.15, 0.15])
-    train_loader = DataLoader(train_data, 32, shuffle=True, collate_fn=collate_fn)
-    val_loader = DataLoader(val_data, 32, shuffle=False, collate_fn=collate_fn)
-    test_loader = DataLoader(test_data, 32, shuffle=False, collate_fn=collate_fn)
+    train_loader = DataLoader(train_data, args.batch, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_data, args.batch, shuffle=False, collate_fn=collate_fn)
+    test_loader = DataLoader(test_data, args.batch, shuffle=False, collate_fn=collate_fn)
 
-    vocab_size = 30 # According to tests
-    embedding_dim = 50
-    hidden_dim = 128
+    vocab_size = 30 # According to tests, dependant on used dataset
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = SyllableCounter(vocab_size, embedding_dim, hidden_dim).to(device)
+    model = SyllableCounter(vocab_size, args.embeds, args.hiddens, args.layers, args.dropout).to(device)
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    num_epochs = 5
-
-    for epoch in range(num_epochs):
+    for epoch in range(args.epochs):
         model.train()
 
-        for inputs, targets in tqdm(train_loader, desc=f'Epoch {epoch + 1} / {num_epochs}'):
+        for inputs, targets in tqdm(train_loader, desc=f'Epoch {epoch + 1} / {args.epochs}'):
             
             inputs = inputs.to(device)
             targets = targets.to(device)
