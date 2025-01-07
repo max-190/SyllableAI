@@ -21,7 +21,7 @@ class SyllableCounter(nn.Module):
 
         self.embed = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=lstm_layers, dropout=dropout, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, 1)
+        self.fc = nn.Linear(hidden_dim, 11)  # Output size is 11 for 0-10+ syllables
     
     def forward(self, x):
         x = self.embed(x)
@@ -31,6 +31,8 @@ class SyllableCounter(nn.Module):
 def collate_fn(batch):
     sequences = pad_sequence([item[0] for item in batch], batch_first=True, padding_value=char_to_idx[' '])
     labels = torch.LongTensor([item[1] for item in batch])
+    labels = torch.clamp(labels, max=10)  # Cap the class values at 10
+    labels = torch.nn.functional.one_hot(labels, num_classes=11).float()  # Convert labels to one-hot vectors
 
     return sequences, labels
 
@@ -90,7 +92,7 @@ def train(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = SyllableCounter(VOCAB_SIZE, args.embeds, args.hiddens, args.layers, args.dropout).to(device)
-    criterion = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss()  # Change loss function to CrossEntropyLoss
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     for epoch in range(args.epochs):
@@ -103,7 +105,7 @@ def train(args):
 
             optimizer.zero_grad()
             outputs = model(inputs)
-            loss = criterion(outputs.squeeze(), targets.float())
+            loss = criterion(outputs, targets)
             loss.backward()
             optimizer.step()
 
@@ -118,11 +120,11 @@ def train(args):
                 targets = targets.to(device)
 
                 outputs = model(inputs)
-                loss = criterion(outputs.squeeze(), targets.float())
+                loss = criterion(outputs, targets)
                 val_loss += loss.item()
 
-                predicted = torch.round(outputs.squeeze()).long()
-                correct_preds += (predicted == targets).sum().item()
+                predicted = torch.argmax(outputs, dim=1)
+                correct_preds += (predicted == torch.argmax(targets, dim=1)).sum().item()
                 total_preds += targets.size(0)
 
         
@@ -139,11 +141,11 @@ def train(args):
             targets = targets.to(device)
 
             outputs = model(inputs)
-            loss = criterion(outputs.squeeze(), targets.float())
+            loss = criterion(outputs, targets)
             test_loss += loss.item()
 
-            predicted = torch.round(outputs.squeeze()).long()
-            correct_preds += (predicted == targets).sum().item()
+            predicted = torch.argmax(outputs, dim=1)
+            correct_preds += (predicted == torch.argmax(targets, dim=1)).sum().item()
             total_preds += targets.size(0)
     
     print(f"Test Loss: {test_loss / len(test_loader)}, Test Accuracy: {(correct_preds / total_preds):.2f}")
@@ -168,7 +170,7 @@ def load(args):
 def num_syllables(model, word):
     with torch.no_grad():
         output = model(str_to_tensor(word).unsqueeze(0))
-        return int(torch.round(output.squeeze()).item())
+        return torch.argmax(output, dim=1).item()
 
 
 def main():
